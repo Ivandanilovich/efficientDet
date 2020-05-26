@@ -234,10 +234,11 @@ def EfficientNet(width_coefficient,
                                       require_flatten=include_top,
                                       weights=weights)
 
-    if input_tensor is None:
-        img_input = tf.keras.layers.Input(shape=input_shape)
-    else:
-        raise Exception('heraks problema')
+    # if input_tensor is None:
+    #     img_input = tf.keras.layers.Input(shape=input_shape)
+    # else:
+    #     raise Exception('heraks problema')
+    img_input = input_tensor
 
     bn_axis = 3 
 
