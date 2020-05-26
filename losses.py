@@ -42,7 +42,7 @@ def focal(alpha=0.25, gamma=1.5):
 
         # compute the normalizer: the number of positive anchors
         normalizer = tf.where(tf.equal(anchor_state, 1))
-        normalizer = tf.cast(tf.shape(normalizer)[0], tf.floatx())
+        normalizer = tf.cast(tf.shape(normalizer)[0], tf.float32)
         normalizer = tf.maximum(tf.cast(1.0, tf.float32), normalizer)
 
         return tf.sum(cls_loss) / normalizer

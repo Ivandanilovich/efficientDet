@@ -1,5 +1,5 @@
-from efficientnet import EfficientNetB0
 import tensorflow as tf
+from efficientnet import EfficientNetB0
 import os
 from data_generator import PascalVocGenerator
 from matplotlib import pyplot as plt
@@ -14,14 +14,14 @@ if __name__=='__main__':
     # # print(efn)
     # p = tf.io.gfile.glob('C:/Users/ivand/Desktop/dataset/annots/*.xml')
     # print(len(p))
-    # train_generator = PascalVocGenerator(
-    #     data_root_dir='C:/Users/ivand/Desktop/dataset/',
-    #     image_dir='images',
-    #     annots_dir='annots',
-    #     subset='train',
-    #     phi=0,
-    #     batch_size=4
-    # )
+    train_generator = PascalVocGenerator(
+        data_root_dir='C:/Users/ivand/Desktop/dataset/',
+        image_dir='images',
+        annots_dir='annots',
+        subset='train',
+        phi=0,
+        batch_size=4
+    )
     # d= 4
 
     # mean = [0.485, 0.456, 0.406]
@@ -81,6 +81,13 @@ if __name__=='__main__':
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=1e-3), loss={
         'regression': smooth_l1(),
         'classification': focal()})
+
+    model.fit(
+        train_generator,
+        epochs=1,
+        verbose=1,
+        # validation_data=validation_generator
+    )
 
     d=4
 
