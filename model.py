@@ -20,8 +20,8 @@ image_sizes = [512, 640, 768, 896, 1024, 1280, 1408]
 MOMENTUM = 0.997
 EPSILON = 1e-4
 
-backbones = [EfficientNetB0, EfficientNetB1, EfficientNetB2,
-             EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6]
+# backbones = [EfficientNetB0, EfficientNetB1, EfficientNetB2,
+#              EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6]
 
 
 def SeparableConvBlock(num_channels, kernel_size, strides, name, freeze_bn=False):
@@ -421,8 +421,14 @@ def efficientdet(phi, num_classes=20, num_anchors=9, weighted_bifpn=False, freez
     d_bifpn = d_bifpns[phi]
     w_head = w_bifpn
     d_head = d_heads[phi]
-    backbone_cls = backbones[phi]
-    features = backbone_cls(input_tensor=image_input, freeze_bn=freeze_bn)
+
+    # backbone_cls = backbones[phi]
+    # features = backbone_cls(input_tensor=image_input, freeze_bn=freeze_bn)
+    assert phi == 0
+    features = EfficientNetB0(include_top=False, input_tensor=image_input, classes=1)
+
+
+
     if weighted_bifpn:
         fpn_features = features
         for i in range(d_bifpn):
