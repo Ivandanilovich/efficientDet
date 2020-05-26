@@ -6,6 +6,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 import cv2
 from model import efficientdet
+from losses import smooth_l1, focal
 
 if __name__=='__main__':
     # print('here')
@@ -71,8 +72,16 @@ if __name__=='__main__':
 
     #     break
     # print('here')
-    edf = efficientdet(0)
+    # edf = efficientdet()
     # print(edf.summary())
+
+    model, prediction_model = efficientdet(0, num_classes=1,
+                                           num_anchors=9)
+
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=1e-3), loss={
+        'regression': smooth_l1(),
+        'classification': focal()})
+
     d=4
 
 
