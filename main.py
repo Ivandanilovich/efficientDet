@@ -74,6 +74,8 @@ if __name__=='__main__':
     # print('here')
     # edf = efficientdet()
     # print(edf.summary())
+    print(tf.__version__)
+    # 4/0
 
     model, prediction_model = efficientdet(0, num_classes=1,
                                            num_anchors=9)
