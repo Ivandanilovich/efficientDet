@@ -46,7 +46,7 @@ def focal(alpha=0.25, gamma=1.5):
         normalizer = tf.cast(tf.shape(normalizer)[0], tf.float32)
         normalizer = tf.maximum(tf.cast(1.0, tf.float32), normalizer)
 
-        return tf.sum(cls_loss) / normalizer
+        return tf.keras.backend.sum(cls_loss) / normalizer
 
     return _focal
 
@@ -93,7 +93,7 @@ def smooth_l1(sigma=3.0):
         # compute the normalizer: the number of positive anchors
         normalizer = tf.maximum(1, tf.shape(indices)[0])
         normalizer = tf.cast(normalizer, dtype=tf.float32)
-        return tf.sum(regression_loss) / normalizer
+        return tf.keras.backend.sum(regression_loss) / normalizer
 
     return _smooth_l1
 
