@@ -7,6 +7,9 @@ import xml.etree.ElementTree as ET
 import anchors
 import warnings
 import random
+from matplotlib import pyplot as plt
+import augmentation
+import imgaug
 
 classes = {'body': 0}
 
@@ -35,6 +38,8 @@ class PascalVocGenerator(tf.keras.Sequential):
         self.group_images()
 
         self.classes = classes
+
+        self.aug_seq = augmentation.get_base_aug_seq()
 
     def size(self):
         """
@@ -135,8 +140,7 @@ class PascalVocGenerator(tf.keras.Sequential):
         """
         Load annotations for all images in group.
         """
-        annotations_group = [self.load_annotations(
-            image_index) for image_index in group]
+        annotations_group = [self.load_annotations(image_index) for image_index in group]
         for annotations in annotations_group:
             assert (isinstance(annotations,
                                dict)), '\'load_annotations\' should return a list of dictionaries, received: {}'.format(
@@ -153,6 +157,9 @@ class PascalVocGenerator(tf.keras.Sequential):
         Filter annotations by removing those that are outside of the image bounds or whose width/height < 0.
         """
         # test all annotations
+        # print(group)
+        # print([self.names[i]for i in group])
+        # print(annotations_group)
         for index, (image, annotations) in enumerate(zip(image_group, annotations_group)):
             # test x2 < x1 | y2 < y1 | x1 < 0 | y1 < 0 | x2 <= 0 | y2 <= 0 | x2 >= image.shape[1] | y2 >= image.shape[0]
             invalid_indices = np.where(
@@ -285,7 +292,7 @@ class PascalVocGenerator(tf.keras.Sequential):
                 (annotations['bboxes'][:, 2] - annotations['bboxes'][:, 0] < 3) |
                 (annotations['bboxes'][:, 3] - annotations['bboxes'][:, 1] < 3)
             )[0]
-
+            assert len(small_indices)==0
             # delete invalid indices
             if len(small_indices):
                 for k in annotations_group[index].keys():
@@ -314,6 +321,33 @@ class PascalVocGenerator(tf.keras.Sequential):
         batch_images = np.array(image_group).astype(np.float32)
         return [batch_images]
     
+    def augment_images(self, images, annots):
+        aug_images, aug_annotations = [], []
+        for i, j in zip(images, annots):
+            bbs = [
+                imgaug.BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3], label=label) 
+                    for box,label in zip(j['bboxes'], j['labels'])
+            ]
+            images_aug, bbs_aug = self.aug_seq(images=[i], bounding_boxes=bbs) # TODO: rewrite beautiful way
+            aug_images.append(images_aug[0])
+            aug_annotations.append({'labels':[],'bboxes':[]})
+            lab, hbox = [], []
+            for bb in bbs_aug:
+                xmin,ymin,xmax,ymax = bb.x1,bb.y1,bb.x2,bb.y2
+                xmin = float(max(xmin,0))
+                ymin = float(max(ymin,0))
+                xmax = float(min(xmax,512))
+                ymax = float(min(ymax,512))
+                lab.append(bb.label)
+                hbox.append([xmin,ymin,xmax,ymax])
+
+            hbox = np.array(hbox, dtype='float64')
+            hbox = hbox.reshape(len(hbox), 4)
+            aug_annotations[-1]['labels'] = np.array(lab, dtype='int32')
+            aug_annotations[-1]['bboxes'] = hbox
+
+        return aug_images, aug_annotations    
+
     def compute_inputs_targets(self, group, debug=False):
         """
         Compute inputs and target outputs for the network.
@@ -322,9 +356,8 @@ class PascalVocGenerator(tf.keras.Sequential):
         annotations_group = self.load_annotations_group(group)
 
         # check validity of annotations
-        # FilterDetections
-        image_group, annotations_group = self.filter_annotations(
-            image_group, annotations_group, group)
+        # image_group, annotations_group = self.filter_annotations(
+        #     image_group, annotations_group, group)
 
         # randomly apply visual effect
         # image_group, annotations_group = self.random_visual_effect_group(
@@ -336,6 +369,12 @@ class PascalVocGenerator(tf.keras.Sequential):
         # randomly apply misc effect
         # image_group, annotations_group = self.random_misc_group(
         #     image_group, annotations_group)
+
+        # apply augmentation
+        if self.subset=='train':
+            image_group, annotations_group = self.augment_images(
+                image_group, annotations_group)
+
 
         # perform preprocessing steps
         image_group, annotations_group = self.preprocess_group(
@@ -374,3 +413,83 @@ class PascalVocGenerator(tf.keras.Sequential):
             num_classes=self.num_classes(),
         )
         return list(batches_targets)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def bbox_transform_inv(boxes, deltas):
+    cxa = (boxes[..., 0] + boxes[..., 2]) / 2
+    cya = (boxes[..., 1] + boxes[..., 3]) / 2
+    wa = boxes[..., 2] - boxes[..., 0]
+    ha = boxes[..., 3] - boxes[..., 1]
+    ty, tx, th, tw = deltas[..., 0], deltas[..., 1], deltas[..., 2], deltas[..., 3]
+    w = np.exp(tw) * wa
+    h = np.exp(th) * ha
+    cy = ty * ha + cya
+    cx = tx * wa + cxa
+    ymin = cy - h / 2.
+    xmin = cx - w / 2.
+    ymax = cy + h / 2.
+    xmax = cx + w / 2.
+    return np.stack([xmin, ymin, xmax, ymax], axis=-1)
+
+if __name__=='__main__': # разбор данных
+    train_generator = PascalVocGenerator(
+        data_root_dir='C:/Users/ivand/Desktop/dataset/',
+        image_dir='images',
+        annots_dir='annots',
+        subset='val',
+        phi=0,
+        batch_size=2
+    )
+
+    mean = [0.485, 0.456, 0.406]
+    std = [0.229, 0.224, 0.225]
+    anch = train_generator.anchors
+
+    # for batch_inputs, batch_targets in train_generator:
+    #     pass
+
+
+    for batch_inputs, batch_targets in train_generator:
+        image = batch_inputs[0][0] # one image
+        image[..., 0] *= std[0]
+        image[..., 1] *= std[1]
+        image[..., 2] *= std[2]
+        image[..., 0] += mean[0]
+        image[..., 1] += mean[1]
+        image[..., 2] += mean[2]
+        image *= 255.
+
+        regression = batch_targets[1][0] # one boxes
+        valid_ids = np.where(regression[:, -1] == 1)[0]
+        boxes = anch[valid_ids]
+        deltas = regression[valid_ids]
+        class_ids = np.argmax(batch_targets[1][0][valid_ids], axis=-1)
+
+        rb = bbox_transform_inv(boxes, deltas[:,:4])
+
+
+        for x1,y1,x2,y2 in boxes:
+            cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), (255, 0, 0), 1)
+        for x1,y1,x2,y2 in rb:
+            cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 1)
+
+        cv2.imshow('image', image.astype(np.uint8))
+        cv2.waitKey(0)
+        break
