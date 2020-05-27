@@ -1,6 +1,34 @@
+# import keras
+from tensorflow import keras
 import tensorflow as tf
 
-class wBiFPNAdd(tf.keras.layers.Layer):
+
+class BatchNormalization(keras.layers.BatchNormalization):
+    """
+    Identical to keras.layers.BatchNormalization, but adds the option to freeze parameters.
+    """
+
+    def __init__(self, freeze, *args, **kwargs):
+        self.freeze = freeze
+        super(BatchNormalization, self).__init__(*args, **kwargs)
+
+        # set to non-trainable if freeze is true
+        self.trainable = not self.freeze
+
+    def call(self, inputs, training=None, **kwargs):
+        # return super.call, but set training
+        if not training:
+            return super(BatchNormalization, self).call(inputs, training=False)
+        else:
+            return super(BatchNormalization, self).call(inputs, training=(not self.freeze))
+
+    def get_config(self):
+        config = super(BatchNormalization, self).get_config()
+        config.update({'freeze': self.freeze})
+        return config
+
+
+class wBiFPNAdd(keras.layers.Layer):
     def __init__(self, epsilon=1e-4, **kwargs):
         super(wBiFPNAdd, self).__init__(**kwargs)
         self.epsilon = epsilon
@@ -9,12 +37,12 @@ class wBiFPNAdd(tf.keras.layers.Layer):
         num_in = len(input_shape)
         self.w = self.add_weight(name=self.name,
                                  shape=(num_in,),
-                                 initializer=tf.keras.initializers.constant(1 / num_in),
+                                 initializer=keras.initializers.constant(1 / num_in),
                                  trainable=True,
                                  dtype=tf.float32)
 
     def call(self, inputs, **kwargs):
-        w = tf.keras.activations.relu(self.w)
+        w = keras.activations.relu(self.w)
         x = tf.reduce_sum([w[i] * inputs[i] for i in range(len(inputs))], axis=0)
         x = x / (tf.reduce_sum(w) + self.epsilon)
         return x
@@ -52,10 +80,10 @@ def bbox_transform_inv(boxes, deltas, scale_factors=None):
     return tf.stack([xmin, ymin, xmax, ymax], axis=-1)
 
 
-class ClipBoxes(tf.keras.layers.Layer):
+class ClipBoxes(keras.layers.Layer):
     def call(self, inputs, **kwargs):
         image, boxes = inputs
-        shape = tf.cast(tf.shape(image), tf.float32)
+        shape = keras.backend.cast(keras.backend.shape(image), keras.backend.floatx())
         height = shape[1]
         width = shape[2]
         x1 = tf.clip_by_value(boxes[:, :, 0], 0, width - 1)
@@ -63,13 +91,13 @@ class ClipBoxes(tf.keras.layers.Layer):
         x2 = tf.clip_by_value(boxes[:, :, 2], 0, width - 1)
         y2 = tf.clip_by_value(boxes[:, :, 3], 0, height - 1)
 
-        return tf.stack([x1, y1, x2, y2], axis=2)
+        return keras.backend.stack([x1, y1, x2, y2], axis=2)
 
     def compute_output_shape(self, input_shape):
         return input_shape[1]
 
 
-class RegressBoxes(tf.keras.layers.Layer):
+class RegressBoxes(keras.layers.Layer):
     def __init__(self, *args, **kwargs):
         super(RegressBoxes, self).__init__(*args, **kwargs)
 
@@ -99,6 +127,7 @@ def filter_detections(
 ):
     """
     Filter detections using the boxes and classification values.
+
     Args
         boxes: Tensor of shape (num_boxes, 4) containing the boxes in (x1, y1, x2, y2) format.
         classification: Tensor of shape (num_boxes, num_classes) containing the classification scores.
@@ -108,6 +137,7 @@ def filter_detections(
         score_threshold: Threshold used to prefilter the boxes with.
         max_detections: Maximum number of detections to keep.
         nms_threshold: Threshold for the IoU value to determine when a box should be suppressed.
+
     Returns
         A list of [boxes, scores, labels, other[0], other[1], ...].
         boxes is shaped (max_detections, 4) and contains the (x1, y1, x2, y2) of the non-suppressed boxes.
@@ -120,7 +150,7 @@ def filter_detections(
     def _filter_detections(scores_, labels_):
         # threshold based on score
         # (num_score_keeps, 1)
-        indices_ = tf.where(tf.greater(scores_, score_threshold))
+        indices_ = tf.where(keras.backend.greater(scores_, score_threshold))
 
         if nms:
             # (num_score_keeps, 4)
@@ -139,7 +169,7 @@ def filter_detections(
             # <tf.Tensor: id=15, shape=(2, 1), dtype=float64, numpy=
             # array([[0.5],
             #        [0.7]])>
-            filtered_scores = tf.gather(scores_, indices_)[:, 0]
+            filtered_scores = keras.backend.gather(scores_, indices_)[:, 0]
 
             # perform NMS
             # filtered_boxes = tf.concat([filtered_boxes[..., 1:2], filtered_boxes[..., 0:1],
@@ -149,13 +179,13 @@ def filter_detections(
 
             # filter indices based on NMS
             # (num_score_nms_keeps, 1)
-            indices_ = tf.gather(indices_, nms_indices)
+            indices_ = keras.backend.gather(indices_, nms_indices)
 
         # add indices to list of all indices
         # (num_score_nms_keeps, )
         labels_ = tf.gather_nd(labels_, indices_)
         # (num_score_nms_keeps, 2)
-        indices_ = tf.stack([indices_[:, 0], labels_], axis=1)
+        indices_ = keras.backend.stack([indices_[:, 0], labels_], axis=1)
 
         return indices_
 
@@ -164,33 +194,33 @@ def filter_detections(
         # perform per class filtering
         for c in range(int(classification.shape[1])):
             scores = classification[:, c]
-            labels = c * tf.ones((tf.shape(scores)[0],), dtype='int64')
+            labels = c * tf.ones((keras.backend.shape(scores)[0],), dtype='int64')
             all_indices.append(_filter_detections(scores, labels))
 
         # concatenate indices to single tensor
         # (concatenated_num_score_nms_keeps, 2)
-        indices = tf.concat(all_indices, axis=0)
+        indices = keras.backend.concatenate(all_indices, axis=0)
     else:
-        scores = tf.max(classification, axis=1)
-        labels = tf.argmax(classification, axis=1)
+        scores = keras.backend.max(classification, axis=1)
+        labels = keras.backend.argmax(classification, axis=1)
         indices = _filter_detections(scores, labels)
 
     # select top k
     scores = tf.gather_nd(classification, indices)
     labels = indices[:, 1]
-    scores, top_indices = tf.nn.top_k(scores, k=tf.minimum(max_detections, tf.shape(scores)[0]))
+    scores, top_indices = tf.nn.top_k(scores, k=keras.backend.minimum(max_detections, keras.backend.shape(scores)[0]))
 
     # filter input using the final set of indices
-    indices = tf.gather(indices[:, 0], top_indices)
-    boxes = tf.gather(boxes, indices)
-    labels = tf.gather(labels, top_indices)
+    indices = keras.backend.gather(indices[:, 0], top_indices)
+    boxes = keras.backend.gather(boxes, indices)
+    labels = keras.backend.gather(labels, top_indices)
 
     # zero pad the outputs
-    pad_size = tf.maximum(0, max_detections - tf.shape(scores)[0])
+    pad_size = keras.backend.maximum(0, max_detections - keras.backend.shape(scores)[0])
     boxes = tf.pad(boxes, [[0, pad_size], [0, 0]], constant_values=-1)
     scores = tf.pad(scores, [[0, pad_size]], constant_values=-1)
     labels = tf.pad(labels, [[0, pad_size]], constant_values=-1)
-    labels = tf.cast(labels, 'int32')
+    labels = keras.backend.cast(labels, 'int32')
 
     # set shapes, since we know what they are
     boxes.set_shape([max_detections, 4])
@@ -198,8 +228,8 @@ def filter_detections(
     labels.set_shape([max_detections])
 
     if detect_quadrangle:
-        alphas = tf.gather(alphas, indices)
-        ratios = tf.gather(ratios, indices)
+        alphas = keras.backend.gather(alphas, indices)
+        ratios = keras.backend.gather(ratios, indices)
         alphas = tf.pad(alphas, [[0, pad_size], [0, 0]], constant_values=-1)
         ratios = tf.pad(ratios, [[0, pad_size]], constant_values=-1)
         alphas.set_shape([max_detections, 4])
@@ -209,7 +239,7 @@ def filter_detections(
         return [boxes, scores, labels]
 
 
-class FilterDetections(tf.keras.layers.Layer):
+class FilterDetections(keras.layers.Layer):
     """
     Keras layer for filtering detections using score threshold and NMS.
     """
@@ -227,6 +257,7 @@ class FilterDetections(tf.keras.layers.Layer):
     ):
         """
         Filters detections using score threshold, NMS and selecting the top-k detections.
+
         Args
             nms: Flag to enable/disable NMS.
             class_specific_filter: Whether to perform filtering per class, or take the best scoring class and filter those.
@@ -247,6 +278,7 @@ class FilterDetections(tf.keras.layers.Layer):
     def call(self, inputs, **kwargs):
         """
         Constructs the NMS graph.
+
         Args
             inputs : List of [boxes, classification, other[0], other[1], ...] tensors.
         """
@@ -297,8 +329,10 @@ class FilterDetections(tf.keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         """
         Computes the output shapes given the input shapes.
+
         Args
             input_shape : List of input shapes [boxes, classification].
+
         Returns
             List of tuples representing the output shapes:
             [filtered_boxes.shape, filtered_scores.shape, filtered_labels.shape, filtered_other[0].shape, filtered_other[1].shape, ...]
@@ -327,6 +361,7 @@ class FilterDetections(tf.keras.layers.Layer):
     def get_config(self):
         """
         Gets the configuration of this layer.
+
         Returns
             Dictionary containing the parameters of this layer.
         """

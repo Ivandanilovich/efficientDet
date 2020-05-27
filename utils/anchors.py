@@ -1,12 +1,14 @@
+# import keras
 import numpy as np
-import tensorflow as tf
+from tensorflow import keras
 
-from compute_overlap import compute_overlap
+from utils.compute_overlap import compute_overlap
 
 
 class AnchorParameters:
     """
     The parameters that define how anchors are generated.
+
     Args
         sizes : List of sizes to use. Each size corresponds to one feature level.
         strides : List of strides to use. Each stride correspond to one feature level.
@@ -20,8 +22,8 @@ class AnchorParameters:
                  scales=(2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.))):
         self.sizes = sizes
         self.strides = strides
-        self.ratios = np.array(ratios, dtype=np.float)
-        self.scales = np.array(scales, dtype=np.float)
+        self.ratios = np.array(ratios, dtype=keras.backend.floatx())
+        self.scales = np.array(scales, dtype=keras.backend.floatx())
 
     def num_anchors(self):
         return len(self.ratios) * len(self.scales)
@@ -33,8 +35,9 @@ The default anchor parameters.
 AnchorParameters.default = AnchorParameters(
     sizes=[32, 64, 128, 256, 512],
     strides=[8, 16, 32, 64, 128],
-    ratios=np.array([1, 0.5, 2], np.float),
-    scales=np.array([2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)], np.float),
+    # ratio=h/w
+    ratios=np.array([1, 0.5, 2], keras.backend.floatx()),
+    scales=np.array([2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)], keras.backend.floatx()),
 )
 
 
@@ -45,9 +48,11 @@ def anchor_targets_bbox(
         num_classes,
         negative_overlap=0.4,
         positive_overlap=0.5,
+        detect_quadrangle=False
 ):
     """
     Generate anchor targets for bbox detection.
+
     Args
         anchors: np.array of annotations of shape (N, 4) for (x1, y1, x2, y2).
         image_group: List of BGR images.
@@ -56,6 +61,7 @@ def anchor_targets_bbox(
         mask_shape: If the image is padded with zeros, mask_shape can be used to mark the relevant part of the image.
         negative_overlap: IoU overlap for negative anchors (all anchors with overlap < negative_overlap are negative).
         positive_overlap: IoU overlap or positive anchors (all anchors with overlap > positive_overlap are positive).
+
     Returns
         labels_batch: batch that contains labels & anchor states (np.array of shape (batch_size, N, num_classes + 1),
                       where N is the number of anchors for an image and the last column defines the anchor state
@@ -74,7 +80,10 @@ def anchor_targets_bbox(
 
     batch_size = len(image_group)
 
-    regression_batch = np.zeros((batch_size, anchors.shape[0], 4 + 1), dtype=np.float32)
+    if detect_quadrangle:
+        regression_batch = np.zeros((batch_size, anchors.shape[0], 9 + 1), dtype=np.float32)
+    else:
+        regression_batch = np.zeros((batch_size, anchors.shape[0], 4 + 1), dtype=np.float32)
     labels_batch = np.zeros((batch_size, anchors.shape[0], num_classes + 1), dtype=np.float32)
 
     # compute labels and regression targets
@@ -98,6 +107,9 @@ def anchor_targets_bbox(
                 index, positive_indices, annotations['labels'][argmax_overlaps_inds[positive_indices]].astype(int)] = 1
 
             regression_batch[index, :, :4] = bbox_transform(anchors, annotations['bboxes'][argmax_overlaps_inds, :])
+            if detect_quadrangle:
+                regression_batch[index, :, 4:8] = annotations['alphas'][argmax_overlaps_inds, :]
+                regression_batch[index, :, 8] = annotations['ratios'][argmax_overlaps_inds]
 
         # ignore anchors outside of image
         if image.shape:
@@ -118,11 +130,13 @@ def compute_gt_annotations(
 ):
     """
     Obtain indices of gt annotations with the greatest overlap.
+
     Args
         anchors: np.array of annotations of shape (N, 4) for (x1, y1, x2, y2).
         annotations: np.array of shape (K, 5) for (x1, y1, x2, y2, label).
         negative_overlap: IoU overlap for negative anchors (all anchors with overlap < negative_overlap are negative).
         positive_overlap: IoU overlap or positive anchors (all anchors with overlap > positive_overlap are positive).
+
     Returns
         positive_indices: indices of positive anchors, (N, )
         ignore_indices: indices of ignored anchors, (N, )
@@ -152,9 +166,11 @@ def compute_gt_annotations(
 def layer_shapes(image_shape, model):
     """
     Compute layer shapes given input image shape and the model.
+
     Args
         image_shape: The shape of the image.
         model: The model to use for computing how the image shape is transformed in the pyramid.
+
     Returns
         A dictionary mapping layer names to image shapes.
     """
@@ -189,9 +205,11 @@ def make_shapes_callback(model):
 def guess_shapes(image_shape, pyramid_levels):
     """
     Guess shapes based on pyramid levels.
+
     Args
          image_shape: The shape of the image.
          pyramid_levels: A list of what pyramid levels are used.
+
     Returns
         A list of image shapes at each pyramid level.
     """
@@ -208,11 +226,13 @@ def anchors_for_shape(
 ):
     """
     Generators anchors for a given shape.
+
     Args
         image_shape: The shape of the image.
         pyramid_levels: List of ints representing which pyramids to use (defaults to [3, 4, 5, 6, 7]).
         anchor_params: Struct containing anchor parameters. If None, default values are used.
         shapes_callback: Function to call for getting the shape of the image at different pyramid levels.
+
     Returns
         np.array of shape (N, 4) containing the (x1, y1, x2, y2) coordinates for the anchors.
     """
@@ -244,6 +264,7 @@ def anchors_for_shape(
 def shift(feature_map_shape, stride, anchors):
     """
     Produce shifted anchors based on shape of the map and stride size.
+
     Args
         feature_map_shape : Shape to shift the anchors over.
         stride : Stride to shift the anchors with over the shape.
@@ -269,20 +290,23 @@ def shift(feature_map_shape, stride, anchors):
     return all_anchors
 
 
-def generate_anchors(base_size, ratios, scales):
+def generate_anchors(base_size=16, ratios=None, scales=None):
     """
     Generate anchor (reference) windows by enumerating aspect ratios X scales w.r.t. a reference window.
+
     Args:
         base_size:
         ratios:
         scales:
-    Returns:
-    """
-    # if ratios is None:
-    #     ratios = AnchorParameters.default.ratios
 
-    # if scales is None:
-    #     scales = AnchorParameters.default.scales
+    Returns:
+
+    """
+    if ratios is None:
+        ratios = AnchorParameters.default.ratios
+
+    if scales is None:
+        scales = AnchorParameters.default.scales
 
     num_anchors = len(ratios) * len(scales)
 
