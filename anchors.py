@@ -269,7 +269,7 @@ def shift(feature_map_shape, stride, anchors):
     return all_anchors
 
 
-def generate_anchors(base_size=16, ratios=None, scales=None):
+def generate_anchors(base_size, ratios, scales):
     """
     Generate anchor (reference) windows by enumerating aspect ratios X scales w.r.t. a reference window.
     Args:
@@ -278,11 +278,11 @@ def generate_anchors(base_size=16, ratios=None, scales=None):
         scales:
     Returns:
     """
-    if ratios is None:
-        ratios = AnchorParameters.default.ratios
+    # if ratios is None:
+    #     ratios = AnchorParameters.default.ratios
 
-    if scales is None:
-        scales = AnchorParameters.default.scales
+    # if scales is None:
+    #     scales = AnchorParameters.default.scales
 
     num_anchors = len(ratios) * len(scales)
 

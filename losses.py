@@ -1,5 +1,6 @@
 
 import tensorflow as tf
+from data_generator import PascalVocGenerator
 
 
 def focal(alpha=0.25, gamma=1.5):
@@ -95,3 +96,18 @@ def smooth_l1(sigma=3.0):
         return tf.sum(regression_loss) / normalizer
 
     return _smooth_l1
+
+
+
+if __name__=='__main__': # разбор лоссов
+    train_generator = PascalVocGenerator(
+        data_root_dir='C:/Users/ivand/Desktop/dataset/',
+        image_dir='images',
+        annots_dir='annots',
+        subset='train',
+        phi=0,
+        batch_size=4
+    )
+    for i, j in train_generator:
+        break
+    print(j)
