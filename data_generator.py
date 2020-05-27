@@ -8,6 +8,8 @@ import anchors
 import warnings
 import random
 from matplotlib import pyplot as plt
+import augmentation
+import imgaug
 
 classes = {'body': 0}
 
@@ -36,6 +38,8 @@ class PascalVocGenerator(tf.keras.Sequential):
         self.group_images()
 
         self.classes = classes
+
+        self.aug_seq = augmentation.get_base_aug_seq()
 
     def size(self):
         """
@@ -317,6 +321,33 @@ class PascalVocGenerator(tf.keras.Sequential):
         batch_images = np.array(image_group).astype(np.float32)
         return [batch_images]
     
+    def augment_images(self, images, annots):
+        aug_images, aug_annotations = [], []
+        for i, j in zip(images, annots):
+            bbs = [
+                imgaug.BoundingBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3], label=label) 
+                    for box,label in zip(j['bboxes'], j['labels'])
+            ]
+            images_aug, bbs_aug = self.aug_seq(images=[i], bounding_boxes=bbs) # TODO: rewrite beautiful way
+            aug_images.append(images_aug[0])
+            aug_annotations.append({'labels':[],'bboxes':[]})
+            lab, hbox = [], []
+            for bb in bbs_aug:
+                xmin,ymin,xmax,ymax = bb.x1,bb.y1,bb.x2,bb.y2
+                xmin = float(max(xmin,0))
+                ymin = float(max(ymin,0))
+                xmax = float(min(xmax,512))
+                ymax = float(min(ymax,512))
+                lab.append(bb.label)
+                hbox.append([xmin,ymin,xmax,ymax])
+
+            hbox = np.array(hbox, dtype='float64')
+            hbox = hbox.reshape(len(hbox), 4)
+            aug_annotations[-1]['labels'] = np.array(lab, dtype='int32')
+            aug_annotations[-1]['bboxes'] = hbox
+
+        return aug_images, aug_annotations    
+
     def compute_inputs_targets(self, group, debug=False):
         """
         Compute inputs and target outputs for the network.
@@ -338,6 +369,11 @@ class PascalVocGenerator(tf.keras.Sequential):
         # randomly apply misc effect
         # image_group, annotations_group = self.random_misc_group(
         #     image_group, annotations_group)
+
+        # apply augmentation
+        if self.subset=='train':
+            image_group, annotations_group = self.augment_images(
+                image_group, annotations_group)
 
 
         # perform preprocessing steps
@@ -417,7 +453,7 @@ if __name__=='__main__': # разбор данных
         data_root_dir='C:/Users/ivand/Desktop/dataset/',
         image_dir='images',
         annots_dir='annots',
-        subset='train',
+        subset='val',
         phi=0,
         batch_size=2
     )
@@ -457,4 +493,3 @@ if __name__=='__main__': # разбор данных
         cv2.imshow('image', image.astype(np.uint8))
         cv2.waitKey(0)
         break
-    
